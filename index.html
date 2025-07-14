@@ -227,13 +227,13 @@
         const messageBox = document.getElementById('messageBox');
         const messageText = document.getElementById('messageText');
         const processingTypeRadios = document.querySelectorAll('input[name="processingType"]');
-        const downloadButton = document.getElementById('downloadButton'); // New: Download button
+        const downloadButton = document.getElementById('downloadButton');
 
         // Placeholder URLs for different simulated AI processing types
         const PLACEHOLDER_IMAGES = {
             enhance: "https://placehold.co/600x400/87CEEB/FFFFFF?text=صورة+معالجة+بالذكاء+الاصطناعي",
-            colorize: "https://placehold.co/600x400/FFD700/000000?text=صورة+ملونة+بالذكاء+الاصطناعي", // Gold color for colorized
-            denoise: "https://placehold.co/600x400/90EE90/000000?text=صورة+مصفاة+بالذكاء+الاصطناعي" // Light green for denoised
+            colorize: "https://placehold.co/600x400/FFD700/000000?text=صورة+ملونة+بالذكاء+الاصطناعي",
+            denoise: "https://placehold.co/600x400/90EE90/000000?text=صورة+مصفاة+بالذكاء+الاصطناعي"
         };
 
         // Function to get the currently selected processing type
@@ -250,7 +250,6 @@
         function showMessage(message, type = 'info') {
             messageText.textContent = message;
             messageBox.classList.remove('hidden');
-            // You can add different classes based on type (e.g., 'error', 'success') for different styling
             if (type === 'error') {
                 messageBox.classList.add('bg-red-100', 'text-red-800', 'border-red-400');
                 messageBox.classList.remove('bg-blue-100', 'text-blue-800', 'border-blue-400');
@@ -267,34 +266,37 @@
 
         // Event listener for image upload
         imageUpload.addEventListener('change', function(event) {
-            hideMessage(); // Hide any previous messages
+            console.log("Image input change event triggered."); // Log for debugging
+            hideMessage();
             const file = event.target.files[0];
             if (file) {
-                // Display file name
+                console.log("File selected:", file.name, file.type); // Log file details
                 fileNameDisplay.textContent = `الصورة المختارة: ${file.name}`;
                 uploadText.textContent = 'تغيير الصورة';
 
-                // Read the image file and display it
                 const reader = new FileReader();
                 reader.onload = function(e) {
+                    console.log("FileReader loaded image data."); // Log when reader finishes
                     originalImage.src = e.target.result;
                     originalImageCard.classList.remove('hidden');
-                    processedImageCard.classList.add('hidden'); // Hide processed image until processing
-                    processedImage.src = '#'; // Clear previous processed image
-                    downloadButton.style.display = 'none'; // Hide download button
-                    processButton.disabled = false; // Enable process button
+                    processedImageCard.classList.add('hidden');
+                    processedImage.src = '#';
+                    downloadButton.style.display = 'none';
+                    processButton.disabled = false;
                 };
-                reader.onerror = function() {
-                    showMessage('حدث خطأ أثناء قراءة الصورة.', 'error');
+                reader.onerror = function(error) {
+                    console.error("FileReader error:", error); // Log any FileReader errors
+                    showMessage('حدث خطأ أثناء قراءة الصورة. تأكد أنها صورة صالحة.', 'error');
                     processButton.disabled = true;
                 };
-                reader.readAsDataURL(file); // Read file as Data URL (base64)
+                reader.readAsDataURL(file);
             } else {
+                console.log("No file selected."); // Log if no file is selected
                 fileNameDisplay.textContent = '';
                 uploadText.textContent = 'اختر صورة';
                 originalImageCard.classList.add('hidden');
                 processedImageCard.classList.add('hidden');
-                downloadButton.style.display = 'none'; // Hide download button
+                downloadButton.style.display = 'none';
                 processButton.disabled = true;
                 showMessage('لم يتم اختيار أي صورة.', 'info');
             }
@@ -302,15 +304,59 @@
 
         // Event listener for the process button
         processButton.addEventListener('click', function() {
+            console.log("Process button clicked."); // Log for debugging
             if (!originalImage.src || originalImage.src === '#') {
                 showMessage('الرجاء اختيار صورة أولاً.', 'error');
                 return;
             }
 
             processButton.disabled = true;
-            loadingSpinner.style.display = 'block'; // Show spinner
-            hideMessage(); // Hide any previous messages
-            downloadButton.style.display = 'none'; // Hide download button during processing
+            loadingSpinner.style.display = 'block';
+            hideMessage();
+            downloadButton.style.display = 'none';
 
             const selectedType = getSelectedProcessingType();
-            const placeholderUrl = PLACEHOLDER_IMAGES[selec
+            const placeholderUrl = PLACEHOLDER_IMAGES[selectedType] || PLACEHOLDER_IMAGES['enhance'];
+
+            setTimeout(() => {
+                processedImage.src = placeholderUrl;
+                processedImageCard.classList.remove('hidden');
+                loadingSpinner.style.display = 'none';
+                processButton.disabled = false;
+                downloadButton.style.display = 'block';
+
+                let successMessage = 'تمت معالجة الصورة بنجاح! (هذه صورة توضيحية)';
+                if (selectedType === 'colorize') {
+                    successMessage = 'تم تلوين الصورة بنجاح! (هذه صورة توضيحية)';
+                } else if (selectedType === 'denoise') {
+                    successMessage = 'تمت تصفية الصورة بنجاح! (هذه صورة توضيحية)';
+                }
+                showMessage(successMessage, 'info');
+            }, 3000);
+        });
+
+        // Event listener for the download button
+        downloadButton.addEventListener('click', function() {
+            if (processedImage.src && processedImage.src !== '#') {
+                const link = document.createElement('a');
+                link.href = processedImage.src;
+                link.download = `processed_image_${Date.now()}.png`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                showMessage('تم حفظ الصورة بنجاح!', 'info');
+            } else {
+                showMessage('لا توجد صورة معالجة لحفظها.', 'error');
+            }
+        });
+
+        // Initial state setup
+        window.onload = function() {
+            processButton.disabled = true;
+            hideMessage();
+            downloadButton.style.display = 'none';
+            console.log("App initialized. Process button disabled."); // Log on initialization
+        };
+    </script>
+</body>
+</html>
