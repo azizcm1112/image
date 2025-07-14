@@ -144,6 +144,15 @@
         .download-button:hover {
             background-color: #2563eb; /* Darker blue on hover */
         }
+        .api-key-input {
+            width: 100%;
+            max-width: 400px;
+            padding: 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.75rem;
+            margin-top: 1rem;
+            text-align: center;
+        }
 
         @media (max-width: 768px) {
             .container {
@@ -172,6 +181,12 @@
             <span id="uploadText">اختر صورة</span>
         </label>
         <p id="fileName" class="text-gray-500 text-sm mt-2"></p>
+
+        <!-- API Key Input Field -->
+        <input type="password" id="apiKeyInput" class="api-key-input" placeholder="أدخل مفتاح API الخاص بك من Replicate.com" />
+        <p class="text-xs text-gray-500 mt-1 text-center">
+            (مفتاح API ضروري للمعالجة الفعلية للصور. لن يتم حفظه.)
+        </p>
 
         <div class="radio-group mt-4">
             <label class="radio-label">
@@ -218,6 +233,7 @@
         const imageUpload = document.getElementById('imageUpload');
         const uploadText = document.getElementById('uploadText');
         const fileNameDisplay = document.getElementById('fileName');
+        const apiKeyInput = document.getElementById('apiKeyInput');
         const processButton = document.getElementById('processButton');
         const loadingSpinner = document.getElementById('loadingSpinner');
         const originalImage = document.getElementById('originalImage');
@@ -229,12 +245,15 @@
         const processingTypeRadios = document.querySelectorAll('input[name="processingType"]');
         const downloadButton = document.getElementById('downloadButton');
 
-        // Placeholder URLs for different simulated AI processing types
-        const PLACEHOLDER_IMAGES = {
-            enhance: "https://placehold.co/600x400/87CEEB/FFFFFF?text=صورة+معالجة+بالذكاء+الاصطناعي",
-            colorize: "https://placehold.co/600x400/FFD700/000000?text=صورة+ملونة+بالذكاء+الاصطناعي",
-            denoise: "https://placehold.co/600x400/90EE90/000000?text=صورة+مصفاة+بالذكاء+الاصطناعي"
-        };
+        // Replicate API configuration
+        // IMPORTANT: In a production app, you should NEVER expose your API key directly in client-side code.
+        // Use a backend proxy to make API calls securely.
+        // For this demonstration, we are placing it here for simplicity.
+        const REPLICATE_API_URL = "https://api.replicate.com/v1/predictions";
+        // This is a specific model for image colorization.
+        // You can find other models for enhancement/denoising on Replicate.com
+        // For now, regardless of radio button selection, this API will be called.
+        const REPLICATE_MODEL_VERSION_COLORIZE = "arielai/colorize-image:62d512a20986796c770511855a909477021e1493026131c9448658097d745772";
 
         // Function to get the currently selected processing type
         function getSelectedProcessingType() {
@@ -264,34 +283,44 @@
             messageBox.classList.add('hidden');
         }
 
+        // Function to update button state
+        function updateProcessButtonState() {
+            const fileSelected = originalImage.src && originalImage.src !== '#';
+            const apiKeyEntered = apiKeyInput.value.trim() !== '';
+            processButton.disabled = !(fileSelected && apiKeyEntered);
+        }
+
+        // Event listener for API Key input
+        apiKeyInput.addEventListener('input', updateProcessButtonState);
+
         // Event listener for image upload
         imageUpload.addEventListener('change', function(event) {
-            console.log("Image input change event triggered."); // Log for debugging
+            console.log("Image input change event triggered.");
             hideMessage();
             const file = event.target.files[0];
             if (file) {
-                console.log("File selected:", file.name, file.type); // Log file details
+                console.log("File selected:", file.name, file.type);
                 fileNameDisplay.textContent = `الصورة المختارة: ${file.name}`;
                 uploadText.textContent = 'تغيير الصورة';
 
                 const reader = new FileReader();
                 reader.onload = function(e) {
-                    console.log("FileReader loaded image data."); // Log when reader finishes
+                    console.log("FileReader loaded image data.");
                     originalImage.src = e.target.result;
                     originalImageCard.classList.remove('hidden');
                     processedImageCard.classList.add('hidden');
                     processedImage.src = '#';
                     downloadButton.style.display = 'none';
-                    processButton.disabled = false;
+                    updateProcessButtonState(); // Update button state after file selection
                 };
                 reader.onerror = function(error) {
-                    console.error("FileReader error:", error); // Log any FileReader errors
+                    console.error("FileReader error:", error);
                     showMessage('حدث خطأ أثناء قراءة الصورة. تأكد أنها صورة صالحة.', 'error');
                     processButton.disabled = true;
                 };
                 reader.readAsDataURL(file);
             } else {
-                console.log("No file selected."); // Log if no file is selected
+                console.log("No file selected.");
                 fileNameDisplay.textContent = '';
                 uploadText.textContent = 'اختر صورة';
                 originalImageCard.classList.add('hidden');
@@ -303,10 +332,15 @@
         });
 
         // Event listener for the process button
-        processButton.addEventListener('click', function() {
-            console.log("Process button clicked."); // Log for debugging
+        processButton.addEventListener('click', async function() {
+            console.log("Process button clicked.");
             if (!originalImage.src || originalImage.src === '#') {
                 showMessage('الرجاء اختيار صورة أولاً.', 'error');
+                return;
+            }
+            const apiKey = apiKeyInput.value.trim();
+            if (!apiKey) {
+                showMessage('الرجاء إدخال مفتاح API الخاص بك.', 'error');
                 return;
             }
 
@@ -315,24 +349,76 @@
             hideMessage();
             downloadButton.style.display = 'none';
 
-            const selectedType = getSelectedProcessingType();
-            const placeholderUrl = PLACEHOLDER_IMAGES[selectedType] || PLACEHOLDER_IMAGES['enhance'];
+            try {
+                // Extract base64 data from the image source
+                const base64Image = originalImage.src.split(',')[1];
+                const mimeType = originalImage.src.split(',')[0].split(':')[1].split(';')[0];
+                const dataUrl = `data:${mimeType};base64,${base64Image}`;
 
-            setTimeout(() => {
-                processedImage.src = placeholderUrl;
-                processedImageCard.classList.remove('hidden');
+                console.log("Sending request to Replicate API...");
+                const response = await fetch(REPLICATE_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Token ${apiKey}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        version: REPLICATE_MODEL_VERSION_COLORIZE,
+                        input: {
+                            image: dataUrl
+                        }
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    console.error("API Error Response:", errorData);
+                    throw new Error(`API Error: ${response.status} - ${errorData.detail || response.statusText}`);
+                }
+
+                const prediction = await response.json();
+                console.log("Replicate API Response (prediction object):", prediction);
+
+                let processedImageUrl = null;
+                let status = prediction.status;
+                let pollUrl = prediction.urls.get;
+
+                while (status !== 'succeeded' && status !== 'failed' && status !== 'canceled') {
+                    console.log(`Polling prediction status: ${status}`);
+                    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+                    const pollResponse = await fetch(pollUrl, {
+                        headers: {
+                            'Authorization': `Token ${apiKey}`
+                        }
+                    });
+                    if (!pollResponse.ok) {
+                        throw new Error(`Polling API Error: ${pollResponse.status} - ${pollResponse.statusText}`);
+                    }
+                    const pollData = await pollResponse.json();
+                    status = pollData.status;
+                    processedImageUrl = pollData.output;
+                }
+
+                if (status === 'succeeded' && processedImageUrl) {
+                    processedImage.src = processedImageUrl;
+                    processedImageCard.classList.remove('hidden');
+                    showMessage('تم تلوين الصورة بنجاح بواسطة الذكاء الاصطناعي!', 'info');
+                } else {
+                    throw new Error(`فشلت المعالجة: ${status}`);
+                }
+
+            } catch (error) {
+                console.error("Error during AI processing:", error);
+                showMessage(`حدث خطأ أثناء معالجة الصورة: ${error.message}. الرجاء التحقق من مفتاح الـ API والصورة.`, 'error');
+                processedImage.src = '#';
+                processedImageCard.classList.add('hidden');
+            } finally {
                 loadingSpinner.style.display = 'none';
                 processButton.disabled = false;
-                downloadButton.style.display = 'block';
-
-                let successMessage = 'تمت معالجة الصورة بنجاح! (هذه صورة توضيحية)';
-                if (selectedType === 'colorize') {
-                    successMessage = 'تم تلوين الصورة بنجاح! (هذه صورة توضيحية)';
-                } else if (selectedType === 'denoise') {
-                    successMessage = 'تمت تصفية الصورة بنجاح! (هذه صورة توضيحية)';
+                if (processedImage.src && processedImage.src !== '#') {
+                    downloadButton.style.display = 'block';
                 }
-                showMessage(successMessage, 'info');
-            }, 3000);
+            }
         });
 
         // Event listener for the download button
@@ -340,7 +426,8 @@
             if (processedImage.src && processedImage.src !== '#') {
                 const link = document.createElement('a');
                 link.href = processedImage.src;
-                link.download = `processed_image_${Date.now()}.png`;
+                const originalFileName = fileNameDisplay.textContent.replace('الصورة المختارة: ', '').split('.')[0];
+                link.download = `${originalFileName}_colorized_${Date.now()}.png`;
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
@@ -352,10 +439,15 @@
 
         // Initial state setup
         window.onload = function() {
+            // Set the API key directly for demonstration purposes
+            // In a production app, this should be handled securely (e.g., via a backend)
+            apiKeyInput.value = "r8_JGfQ5nxG8vzuwWIAu6hJTc9az6PWFb229Kpp5"; 
+            updateProcessButtonState(); // Update button state after setting API key
+
             processButton.disabled = true;
             hideMessage();
             downloadButton.style.display = 'none';
-            console.log("App initialized. Process button disabled."); // Log on initialization
+            console.log("App initialized. Process button disabled.");
         };
     </script>
 </body>
