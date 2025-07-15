@@ -182,11 +182,11 @@
         </label>
         <p id="fileName" class="text-gray-500 text-sm mt-2"></p>
 
-        <!-- API Key Input Field -->
-        <input type="password" id="apiKeyInput" class="api-key-input" placeholder="أدخل مفتاح API الخاص بك من Replicate.com" />
+        <!-- API Key Input Field is no longer needed on the frontend -->
+        <!-- <input type="password" id="apiKeyInput" class="api-key-input" placeholder="أدخل مفتاح API الخاص بك من Replicate.com" />
         <p class="text-xs text-gray-500 mt-1 text-center">
             (مفتاح API ضروري للمعالجة الفعلية للصور. لن يتم حفظه.)
-        </p>
+        </p> -->
 
         <div class="radio-group mt-4">
             <label class="radio-label">
@@ -233,7 +233,7 @@
         const imageUpload = document.getElementById('imageUpload');
         const uploadText = document.getElementById('uploadText');
         const fileNameDisplay = document.getElementById('fileName');
-        const apiKeyInput = document.getElementById('apiKeyInput');
+        // const apiKeyInput = document.getElementById('apiKeyInput'); // No longer needed
         const processButton = document.getElementById('processButton');
         const loadingSpinner = document.getElementById('loadingSpinner');
         const originalImage = document.getElementById('originalImage');
@@ -245,15 +245,9 @@
         const processingTypeRadios = document.querySelectorAll('input[name="processingType"]');
         const downloadButton = document.getElementById('downloadButton');
 
-        // Replicate API configuration
-        // IMPORTANT: In a production app, you should NEVER expose your API key directly in client-side code.
-        // Use a backend proxy to make API calls securely.
-        // For this demonstration, we are placing it here for simplicity.
-        const REPLICATE_API_URL = "https://api.replicate.com/v1/predictions";
-        // This is a specific model for image colorization.
-        // You can find other models for enhancement/denoising on Replicate.com
-        // For now, regardless of radio button selection, this API will be called.
-        const REPLICATE_MODEL_VERSION_COLORIZE = "arielai/colorize-image:62d512a20986796c770511855a909477021e1493026131c9448658097d745772";
+        // The API call will now go to our own Vercel serverless function
+        // Changed to use an absolute URL by prepending window.location.origin
+        const PROXY_API_URL = window.location.origin + "/api/colorize"; 
 
         // Function to get the currently selected processing type
         function getSelectedProcessingType() {
@@ -285,13 +279,10 @@
 
         // Function to update button state
         function updateProcessButtonState() {
+            // Now, the process button is enabled simply if a file is selected
             const fileSelected = originalImage.src && originalImage.src !== '#';
-            const apiKeyEntered = apiKeyInput.value.trim() !== '';
-            processButton.disabled = !(fileSelected && apiKeyEntered);
+            processButton.disabled = !fileSelected;
         }
-
-        // Event listener for API Key input
-        apiKeyInput.addEventListener('input', updateProcessButtonState);
 
         // Event listener for image upload
         imageUpload.addEventListener('change', function(event) {
@@ -338,11 +329,6 @@
                 showMessage('الرجاء اختيار صورة أولاً.', 'error');
                 return;
             }
-            const apiKey = apiKeyInput.value.trim();
-            if (!apiKey) {
-                showMessage('الرجاء إدخال مفتاح API الخاص بك.', 'error');
-                return;
-            }
 
             processButton.disabled = true;
             loadingSpinner.style.display = 'block';
@@ -350,66 +336,43 @@
             downloadButton.style.display = 'none';
 
             try {
-                // Extract base64 data from the image source
                 const base64Image = originalImage.src.split(',')[1];
                 const mimeType = originalImage.src.split(',')[0].split(':')[1].split(';')[0];
                 const dataUrl = `data:${mimeType};base64,${base64Image}`;
 
-                console.log("Sending request to Replicate API...");
-                const response = await fetch(REPLICATE_API_URL, {
+                console.log("Sending request to Proxy API:", PROXY_API_URL); // Log the full URL
+                const response = await fetch(PROXY_API_URL, {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Token ${apiKey}`,
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        version: REPLICATE_MODEL_VERSION_COLORIZE,
-                        input: {
-                            image: dataUrl
-                        }
+                        image: dataUrl,
+                        // You could send the selectedType here if you had different models
+                        // type: getSelectedProcessingType()
                     })
                 });
 
                 if (!response.ok) {
                     const errorData = await response.json();
-                    console.error("API Error Response:", errorData);
-                    throw new Error(`API Error: ${response.status} - ${errorData.detail || response.statusText}`);
+                    console.error("Proxy API Error Response:", errorData);
+                    throw new Error(`Proxy Error: ${response.status} - ${errorData.message || response.statusText}`);
                 }
 
-                const prediction = await response.json();
-                console.log("Replicate API Response (prediction object):", prediction);
+                const result = await response.json();
+                console.log("Proxy API Success Response:", result);
 
-                let processedImageUrl = null;
-                let status = prediction.status;
-                let pollUrl = prediction.urls.get;
-
-                while (status !== 'succeeded' && status !== 'failed' && status !== 'canceled') {
-                    console.log(`Polling prediction status: ${status}`);
-                    await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
-                    const pollResponse = await fetch(pollUrl, {
-                        headers: {
-                            'Authorization': `Token ${apiKey}`
-                        }
-                    });
-                    if (!pollResponse.ok) {
-                        throw new Error(`Polling API Error: ${pollResponse.status} - ${pollResponse.statusText}`);
-                    }
-                    const pollData = await pollResponse.json();
-                    status = pollData.status;
-                    processedImageUrl = pollData.output;
-                }
-
-                if (status === 'succeeded' && processedImageUrl) {
-                    processedImage.src = processedImageUrl;
+                if (result.processedImageUrl) {
+                    processedImage.src = result.processedImageUrl;
                     processedImageCard.classList.remove('hidden');
-                    showMessage('تم تلوين الصورة بنجاح بواسطة الذكاء الاصطناعي!', 'info');
+                    showMessage('تمت معالجة الصورة بنجاح بواسطة الذكاء الاصطناعي!', 'info');
                 } else {
-                    throw new Error(`فشلت المعالجة: ${status}`);
+                    throw new Error('لم يتم استلام رابط الصورة المعالجة من الخادم.');
                 }
 
             } catch (error) {
                 console.error("Error during AI processing:", error);
-                showMessage(`حدث خطأ أثناء معالجة الصورة: ${error.message}. الرجاء التحقق من مفتاح الـ API والصورة.`, 'error');
+                showMessage(`حدث خطأ أثناء معالجة الصورة: ${error.message}. الرجاء المحاولة مرة أخرى لاحقاً.`, 'error');
                 processedImage.src = '#';
                 processedImageCard.classList.add('hidden');
             } finally {
@@ -439,10 +402,7 @@
 
         // Initial state setup
         window.onload = function() {
-            // Removed the hardcoded API key here
-            // apiKeyInput.value = "r8_JGfQ5nxG8vzuwWIAu6hJTc9az6PWFb229Kpp5"; 
-            updateProcessButtonState(); // Update button state after setting API key (now empty)
-
+            updateProcessButtonState();
             processButton.disabled = true;
             hideMessage();
             downloadButton.style.display = 'none';
