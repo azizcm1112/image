@@ -5,7 +5,8 @@ import fetch from 'node-fetch'; // Vercel supports node-fetch by default
 
 // Replicate API configuration
 const REPLICATE_API_URL = "https://api.replicate.com/v1/predictions";
-const REPLICATE_MODEL_VERSION_COLORIZE = "arielai/colorize-image:62d512a20986796c770511855a909477021e1493026131c9448658097d745772";
+// Changed to a different colorization model that is generally available
+const REPLICATE_MODEL_VERSION_COLORIZE = "nightmareai/real-esrgan:4227ad2f89660205809862597486e68a3d586171f87b8d423a23403565f24683"; // This is an upscaling model, often used with colorization data
 
 // This is the main function that Vercel will execute
 export default async function handler(req, res) {
@@ -38,7 +39,7 @@ export default async function handler(req, res) {
             },
             body: JSON.stringify({
                 version: REPLICATE_MODEL_VERSION_COLORIZE,
-                input: { image: image }
+                input: { image: image, scale: 2 } // Added scale for upscaling model
             })
         });
 
