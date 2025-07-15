@@ -439,10 +439,9 @@
 
         // Initial state setup
         window.onload = function() {
-            // Set the API key directly for demonstration purposes
-            // In a production app, this should be handled securely (e.g., via a backend)
-            apiKeyInput.value = "r8_JGfQ5nxG8vzuwWIAu6hJTc9az6PWFb229Kpp5"; 
-            updateProcessButtonState(); // Update button state after setting API key
+            // Removed the hardcoded API key here
+            // apiKeyInput.value = "r8_JGfQ5nxG8vzuwWIAu6hJTc9az6PWFb229Kpp5"; 
+            updateProcessButtonState(); // Update button state after setting API key (now empty)
 
             processButton.disabled = true;
             hideMessage();
