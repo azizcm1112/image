@@ -14,9 +14,7 @@ export default async function handler(req, res) {
     }
 
     // Get the API key from environment variables (SECURE WAY)
-    // Using the same env var name (REPLICATE_API_TOKEN) for simplicity,
-    // but remember it now holds your DeepAI API key.
-    const API_TOKEN = process.env.REPLICATE_API_TOKEN; 
+    const API_TOKEN = process.env.REPLICATE_API_TOKEN; // Still using this name for consistency
 
     if (!API_TOKEN) {
         console.error("API_TOKEN is not set in environment variables.");
@@ -36,7 +34,7 @@ export default async function handler(req, res) {
         const deepaiResponse = await fetch(DEEPAI_API_URL, {
             method: 'POST',
             headers: {
-                'api-key': API_TOKEN, // DeepAI uses 'api-key' header for authorization
+                'api-key': API_TOKEN, // CORRECTED: DeepAI uses 'api-key' header for authorization
                 'Content-Type': 'application/json', // We are sending JSON body
             },
             body: JSON.stringify({
