@@ -1,13 +1,10 @@
 // api/colorize.js
-// This is your serverless function that acts as a proxy to Replicate.com
+// This is your serverless function that acts as a proxy to DeepAI Colorizer API
 
-import fetch from 'node-fetch'; // Vercel supports node-fetch by default
+import fetch from 'node-fetch';
 
-// Replicate API configuration
-const REPLICATE_API_URL = "https://api.replicate.com/v1/predictions";
-// Changed to a different colorization model that is generally available
-// This model is specifically for colorization: 'jingyichen/colorization:06528d25d0c008272f254e2071a067098555e105e4b2d8614666f2b7f5255470'
-const REPLICATE_MODEL_VERSION_COLORIZE = "jingyichen/colorization:06528d25d0c008272f254e2071a067098555e105e4b2d8614666f2b7f5255470";
+// DeepAI API configuration
+const DEEPAI_API_URL = "https://api.deepai.org/api/colorizer"; // DeepAI Colorizer API endpoint
 
 // This is the main function that Vercel will execute
 export default async function handler(req, res) {
@@ -17,74 +14,51 @@ export default async function handler(req, res) {
     }
 
     // Get the API key from environment variables (SECURE WAY)
-    const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN;
+    // Using the same env var name (REPLICATE_API_TOKEN) for simplicity,
+    // but remember it now holds your DeepAI API key.
+    const API_TOKEN = process.env.REPLICATE_API_TOKEN; 
 
-    if (!REPLICATE_API_TOKEN) {
-        console.error("REPLICATE_API_TOKEN is not set in environment variables.");
+    if (!API_TOKEN) {
+        console.error("API_TOKEN is not set in environment variables.");
         return res.status(500).json({ message: 'Server configuration error: API token missing.' });
     }
 
     try {
-        const { image } = req.body; // Get the image data from the frontend request
+        const { image } = req.body; // Get the image data from the frontend request (base64 data URL)
 
         if (!image) {
             return res.status(400).json({ message: 'Image data is required.' });
         }
 
-        // Step 1: Create a prediction request on Replicate
-        const predictionResponse = await fetch(REPLICATE_API_URL, {
+        // DeepAI API expects the base64 image data directly, or as a file.
+        // For JSON body, it's usually just the base64 string or data URL.
+        // We send the full data URL string.
+        const deepaiResponse = await fetch(DEEPAI_API_URL, {
             method: 'POST',
             headers: {
-                'Authorization': `Token ${REPLICATE_API_TOKEN}`, // Use the secure API token
-                'Content-Type': 'application/json',
+                'api-key': API_TOKEN, // DeepAI uses 'api-key' header for authorization
+                'Content-Type': 'application/json', // We are sending JSON body
             },
             body: JSON.stringify({
-                version: REPLICATE_MODEL_VERSION_COLORIZE,
-                input: { image: image } // No 'scale' parameter for this colorization model
+                image: image // Send the full data URL (e.g., "data:image/jpeg;base64,...")
             })
         });
 
-        if (!predictionResponse.ok) {
-            const errorData = await predictionResponse.json();
-            console.error("Replicate API Prediction Error:", errorData);
-            return res.status(predictionResponse.status).json({
-                message: `Failed to create prediction: ${errorData.detail || predictionResponse.statusText}`
-            });
+        if (!deepaiResponse.ok) {
+            const errorData = await deepaiResponse.json();
+            console.error("DeepAI API Error Response:", errorData);
+            // DeepAI often returns errors in an 'err' field
+            throw new Error(`DeepAI API Error: ${deepaiResponse.status} - ${errorData.err || deepaiResponse.statusText}`);
         }
 
-        const prediction = await predictionResponse.json();
-        let processedImageUrl = null;
-        let status = prediction.status;
-        let pollUrl = prediction.urls.get;
+        const result = await deepaiResponse.json();
+        console.log("DeepAI API Success Response:", result);
 
-        // Step 2: Poll the prediction status until it's succeeded or failed
-        while (status !== 'succeeded' && status !== 'failed' && status !== 'canceled') {
-            await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
-            const pollResponse = await fetch(pollUrl, {
-                headers: {
-                    'Authorization': `Token ${REPLICATE_API_TOKEN}`
-                }
-            });
-
-            if (!pollResponse.ok) {
-                const pollErrorData = await pollResponse.json();
-                console.error("Replicate API Polling Error:", pollErrorData);
-                return res.status(pollResponse.status).json({
-                    message: `Failed to poll prediction status: ${pollErrorData.detail || pollResponse.statusText}`
-                });
-            }
-
-            const pollData = await pollResponse.json();
-            status = pollData.status;
-            processedImageUrl = pollData.output;
-        }
-
-        if (status === 'succeeded' && processedImageUrl) {
-            // Send the processed image URL back to the frontend
-            res.status(200).json({ processedImageUrl: processedImageUrl });
+        if (result.output_url) { // DeepAI colorizer typically returns 'output_url'
+            res.status(200).json({ processedImageUrl: result.output_url });
         } else {
-            console.error("Prediction failed or canceled:", status);
-            res.status(500).json({ message: `Image processing failed: ${status}` });
+            console.error("DeepAI output_url missing:", result);
+            res.status(500).json({ message: 'Failed to get processed image URL from DeepAI.' });
         }
 
     } catch (error) {
